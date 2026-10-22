@@ -634,8 +634,9 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
       courtyardComplexity: 0.9,
       greeneryDensity: 0.82,
       sidewalkDensity: 0.9,
+      pedestrianDensity: 0.85,
       season: 'autumn',
-      timeOfDay: 'day',
+      timeOfDay: 'night',
       allowedResidentialSeries: ['OMR-Chertanovo', 'P-44', 'KOPE', '1605-AM'],
       layers: {
         buildings: true,
@@ -644,6 +645,7 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
         paths: true,
         benchesAndUrns: true,
         vegetation: true,
+        pedestrians: true,
       },
     },
     highlights: [
@@ -680,6 +682,7 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
       courtyardComplexity: 0.85,
       greeneryDensity: 0.95,
       sidewalkDensity: 0.85,
+      pedestrianDensity: 0.8,
       season: 'autumn',
       timeOfDay: 'day',
       allowedResidentialSeries: ['1-515-9M', 'II-49', '1605-AM', 'II-68', 'P-3'],
@@ -690,6 +693,7 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
         paths: true,
         benchesAndUrns: true,
         vegetation: true,
+        pedestrians: true,
       },
     },
     highlights: [
@@ -725,6 +729,7 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
       courtyardComplexity: 0.92,
       greeneryDensity: 0.9,
       sidewalkDensity: 0.88,
+      pedestrianDensity: 0.9,
       season: 'summer',
       timeOfDay: 'day',
       allowedResidentialSeries: ['P-44', 'P-3', 'P-46', 'KOPE'],
@@ -735,6 +740,7 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
         paths: true,
         benchesAndUrns: true,
         vegetation: true,
+        pedestrians: true,
       },
     },
     highlights: [
@@ -771,8 +777,9 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
       courtyardComplexity: 0.85,
       greeneryDensity: 0.85,
       sidewalkDensity: 0.82,
+      pedestrianDensity: 0.8,
       season: 'winter',
-      timeOfDay: 'sunset',
+      timeOfDay: 'evening',
       allowedResidentialSeries: ['1-515-9M', 'II-49', 'KOPE', 'P-44', 'II-68'],
       layers: {
         buildings: true,
@@ -781,6 +788,7 @@ export const DISTRICT_PRESETS: Record<DistrictPresetId, DistrictPresetSpec> = {
         paths: true,
         benchesAndUrns: true,
         vegetation: true,
+        pedestrians: true,
       },
     },
     highlights: [

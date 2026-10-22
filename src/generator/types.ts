@@ -40,6 +40,7 @@ export interface GeneratorParams {
   courtyardComplexity: number; // 0.3 to 1.0 (controls playgrounds, benches, paths)
   greeneryDensity: number; // 0.2 to 1.0 (controls trees & shrubs)
   sidewalkDensity: number; // 0.3 to 1.0 (controls pedestrian path network)
+  pedestrianDensity: number; // 0.2 to 1.0 (controls active pedestrians walking on sidewalks)
   season: SeasonId;
   timeOfDay: TimeOfDayId;
   allowedResidentialSeries: BuildingSeriesId[]; // empty = preset default
@@ -50,6 +51,7 @@ export interface GeneratorParams {
     paths: boolean;
     benchesAndUrns: boolean;
     vegetation: boolean;
+    pedestrians: boolean;
   };
 }
 
@@ -176,6 +178,35 @@ export interface VegetationItem {
   crownRadius: number;
 }
 
+export interface PedestrianWaypoint {
+  x: number;
+  z: number;
+}
+
+export interface PedestrianAgentSpec {
+  id: string;
+  name: string;
+  activity: string;
+  role: 'worker' | 'shopper' | 'student' | 'pensioner' | 'parent';
+  coatColor: string;
+  pantsColor: string;
+  hatColor: string;
+  hasBag: boolean;
+  bagColor: string;
+  speed: number; // m/s
+  initialPhase: number; // 0 to 1
+  lateralOffset: number; // m offset from path centerline
+  waypoints: PedestrianWaypoint[];
+}
+
+export interface StreetLampItem {
+  id: string;
+  x: number;
+  z: number;
+  rotation: number;
+  height: number;
+}
+
 export interface DistrictMetrics {
   totalBuildings: number;
   residentialBuildings: number;
@@ -197,6 +228,8 @@ export interface DistrictMetrics {
   urnsCount: number;
   treesCount: number;
   shrubsCount: number;
+  pedestriansCount: number;
+  streetLampsCount: number;
   pedestrianPathsLengthMeters: number;
   greenSpacePercentage: number;
   snipComplianceScore: number; // % compliance with СНиП II-60-75
@@ -211,6 +244,8 @@ export interface GeneratedDistrict {
   paths: PedestrianPathSegment[];
   benchesAndUrns: BenchAndUrnItem[];
   vegetation: VegetationItem[];
+  pedestrians: PedestrianAgentSpec[];
+  streetLamps: StreetLampItem[];
   metrics: DistrictMetrics;
 }
 

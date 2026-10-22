@@ -82,10 +82,12 @@ export default function App() {
           district={district}
           cameraPreset={cameraPreset}
           selectedEntity={selectedEntity}
+          activeModal={activeModal}
           onSelectPreset={handleSelectPreset}
           onUpdateParams={setParams}
           onChangeCameraPreset={setCameraPreset}
           onSelectEntity={setSelectedEntity}
+          onOpenModal={setActiveModal}
         />
       </main>
     </div>

@@ -1,6 +1,6 @@
 import React from 'react';
 
-export type ActiveModalType = 'none' | 'passport' | 'catalog' | 'snip' | 'plan2d';
+export type ActiveModalType = 'none' | 'passport' | 'encyclopedia' | 'snip' | 'plan2d';
 
 interface TopBarProps {
   activeModal: ActiveModalType;
@@ -43,12 +43,12 @@ export const TopBar: React.FC<TopBarProps> = ({
         </button>
         <button
           type="button"
-          onClick={() => onOpenModal(activeModal === 'catalog' ? 'none' : 'catalog')}
+          onClick={() => onOpenModal(activeModal === 'encyclopedia' ? 'none' : 'encyclopedia')}
           className={`hover:text-amber-400 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
-            activeModal === 'catalog' ? 'text-amber-400 underline' : ''
+            activeModal === 'encyclopedia' ? 'text-amber-400 underline' : ''
           }`}
         >
-          Каталог серий
+          Энциклопедия зданий
         </button>
         <button
           type="button"

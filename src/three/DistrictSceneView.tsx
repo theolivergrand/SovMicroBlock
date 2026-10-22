@@ -15,7 +15,18 @@ import {
   buildPlaygroundMeshGroup,
   buildVegetationGroup,
 } from './CourtyardBuilder';
+import {
+  AnimatedPedestrianHandle,
+  buildPedestrianActor,
+  buildStreetLampsGroup,
+  updatePedestriansAtTime,
+} from './PedestrianBuilder';
 import { createConcreteBumpTexture, getSeasonPalette } from './SovietMaterials';
+import {
+  buildInstancedWindGrass,
+  createGrassLawnShaderMaterial,
+  createSovietSkyDome,
+} from './SovietShaders';
 
 interface DistrictSceneViewProps {
   district: GeneratedDistrict;
@@ -44,7 +55,6 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
   const sceneApiRef = useRef<{
     rebuildScene: (d: GeneratedDistrict, p: GeneratorParams, sel: SelectedEntity | null) => void;
     flyToPreset: (preset: CameraPresetId, d: GeneratedDistrict, sel: SelectedEntity | null) => void;
-    requestRender: () => void;
   } | null>(null);
 
   useEffect(() => {
@@ -68,7 +78,7 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.08;
+    renderer.toneMappingExposure = 1.12;
     renderer.setPixelRatio(isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = !isSoftwareGl;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -84,7 +94,7 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
     scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
     pmremGenerator.dispose();
 
-    const camera = new THREE.PerspectiveCamera(45, width / height, 1.0, 900);
+    const camera = new THREE.PerspectiveCamera(45, width / height, 1.0, 950);
     camera.position.set(135, 92, 155);
 
     const controls = new OrbitControls(camera, renderer.domElement);
@@ -92,10 +102,14 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
     controls.enableDamping = !isSoftwareGl;
     controls.dampingFactor = 0.08;
     controls.maxPolarAngle = Math.PI / 2 - 0.03;
-    controls.minDistance = 12;
-    controls.maxDistance = 380;
+    controls.minDistance = 10;
+    controls.maxDistance = 390;
 
-    // 3-Point + Warm/Cool Outdoor Atmospheric Lighting Rig
+    // 1. Custom GLSL Atmospheric Sky Dome
+    const skyDome = createSovietSkyDome();
+    scene.add(skyDome.mesh);
+
+    // 2. Outdoor Atmospheric Lighting Rig + Evening Courtyard Point Lights
     const hemiLight = new THREE.HemisphereLight(0x9ec5eb, 0x576148, 0.85);
     hemiLight.position.set(0, 140, 0);
     scene.add(hemiLight);
@@ -120,6 +134,22 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
     rimLight.position.set(-110, 75, -95);
     scene.add(rimLight);
 
+    // Warm sodium-vapor courtyard & boulevard point lights for evening/sunset authenticity
+    const courtyardPointLights: THREE.PointLight[] = [];
+    const courtyardLightCoords = [
+      [-56, 14, -52],
+      [56, 14, -52],
+      [-56, 14, 52],
+      [56, 14, 52],
+      [0, 16, 0],
+    ];
+    for (const [lx, ly, lz] of courtyardLightCoords) {
+      const pt = new THREE.PointLight(0xffa947, 0, 95, 1.35);
+      pt.position.set(lx, ly, lz);
+      scene.add(pt);
+      courtyardPointLights.push(pt);
+    }
+
     // Content Root & Selection Highlight Ring
     const contentRoot = new THREE.Group();
     scene.add(contentRoot);
@@ -139,6 +169,9 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
     const maxAnisotropy = renderer.capabilities.getMaxAnisotropy();
     const sharedBumpTex = createConcreteBumpTexture(maxAnisotropy);
     let interactableMeshes: THREE.Object3D[] = [];
+    let activePedestrianHandles: AnimatedPedestrianHandle[] = [];
+    let activeGrassShaderMat: THREE.ShaderMaterial | null = null;
+    let activeWindGrassController: { mesh: THREE.InstancedMesh; updateTime: (t: number) => void } | null = null;
 
     // Camera transition state
     let transitionActive = false;
@@ -146,14 +179,13 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
     const targetLookAt = new THREE.Vector3(0, 8, 0);
 
     let frameId = 0;
-    let renderBusy = false;
-    let renderDirty = false;
     let unmounted = false;
+    const startTimeMs = performance.now();
 
     function afterDraw(cb: () => void) {
       const gl = renderer.getContext() as WebGL2RenderingContext;
       if (!gl || typeof gl.fenceSync !== 'function') {
-        frameId = window.setTimeout(cb, 80);
+        frameId = window.setTimeout(cb, 85);
         return;
       }
       const sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
@@ -162,59 +194,60 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
         if (unmounted) return;
         const state = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
         if (state === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
+          frameId = window.setTimeout(poll, 6);
         } else {
           if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
+          frameId = window.setTimeout(cb, 85);
         }
       };
-      frameId = window.setTimeout(poll, 5);
+      frameId = window.setTimeout(poll, 6);
     }
 
-    function requestRender() {
+    function tick() {
       if (unmounted) return;
-      if (renderBusy) {
-        renderDirty = true;
-        return;
+
+      const elapsed = (performance.now() - startTimeMs) * 0.001;
+
+      // Update animated GLSL shaders (sky clouds, grass wind waves, 3D grass blades)
+      skyDome.updateTime(elapsed);
+      if (activeGrassShaderMat) {
+        activeGrassShaderMat.uniforms.uTime.value = elapsed;
       }
-      renderBusy = true;
-      frameId = requestAnimationFrame(() => {
-        if (unmounted) return;
-        renderDirty = false;
+      if (activeWindGrassController) {
+        activeWindGrassController.updateTime(elapsed);
+      }
 
-        if (transitionActive) {
-          const alpha = isSoftwareGl ? 0.45 : 0.16;
-          camera.position.lerp(targetCamPos, alpha);
-          controls.target.lerp(targetLookAt, alpha);
-          if (
-            camera.position.distanceToSquared(targetCamPos) < 0.25 &&
-            controls.target.distanceToSquared(targetLookAt) < 0.25
-          ) {
-            camera.position.copy(targetCamPos);
-            controls.target.copy(targetLookAt);
-            transitionActive = false;
-          } else {
-            renderDirty = true;
-          }
+      // Update walking pedestrians along sidewalk routes
+      if (activePedestrianHandles.length > 0) {
+        updatePedestriansAtTime(activePedestrianHandles, elapsed);
+      }
+
+      if (transitionActive) {
+        const alpha = isSoftwareGl ? 0.45 : 0.16;
+        camera.position.lerp(targetCamPos, alpha);
+        controls.target.lerp(targetLookAt, alpha);
+        if (
+          camera.position.distanceToSquared(targetCamPos) < 0.25 &&
+          controls.target.distanceToSquared(targetLookAt) < 0.25
+        ) {
+          camera.position.copy(targetCamPos);
+          controls.target.copy(targetLookAt);
+          transitionActive = false;
         }
+      }
 
-        controls.update();
-        renderer.render(scene, camera);
+      controls.update();
+      renderer.render(scene, camera);
 
-        const done = () => {
-          renderBusy = false;
-          if (renderDirty) requestRender();
-        };
-        if (isSoftwareGl) afterDraw(done);
-        else done();
-      });
+      if (isSoftwareGl) {
+        afterDraw(tick);
+      } else {
+        frameId = requestAnimationFrame(tick);
+      }
     }
 
     controls.addEventListener('start', () => {
       transitionActive = false;
-    });
-    controls.addEventListener('change', () => {
-      requestRender();
     });
 
     const rebuildScene = (
@@ -222,49 +255,85 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
       p: GeneratorParams,
       sel: SelectedEntity | null
     ) => {
-      // Clear previous contentRoot children
       while (contentRoot.children.length > 0) {
         const child = contentRoot.children[0];
         contentRoot.remove(child);
       }
       interactableMeshes = [];
+      activePedestrianHandles = [];
+      activeGrassShaderMat = null;
+      activeWindGrassController = null;
 
       const palette = getSeasonPalette(p.season);
 
-      // Update atmosphere & lighting for season and timeOfDay
+      // Update custom GLSL Sky Dome & Scene Lighting for timeOfDay & season
+      skyDome.updateConfig(p.season, p.timeOfDay);
+
       let bgHex = palette.fogColor;
       if (p.timeOfDay === 'night') {
-        bgHex = '#101824';
-        sunLight.color.set('#7aa2d4');
-        sunLight.intensity = 0.55;
-        hemiLight.color.set('#2c4466');
-        hemiLight.groundColor.set('#18202c');
-        hemiLight.intensity = 0.55;
+        bgHex = '#0d1524';
+        scene.environmentIntensity = 0.16;
+        renderer.toneMappingExposure = 1.16;
+        sunLight.color.set('#5a82b8');
+        sunLight.intensity = 0.34;
+        sunLight.position.set(-95, 130, 85);
+        hemiLight.color.set('#274066');
+        hemiLight.groundColor.set('#121824');
+        hemiLight.intensity = 0.42;
+        rimLight.color.set('#ffaa54');
+        rimLight.intensity = 0.32;
+        for (const pt of courtyardPointLights) {
+          pt.color.set('#ff9d3b');
+          pt.intensity = 4.2;
+        }
       } else if (p.timeOfDay === 'sunset') {
-        bgHex = '#cfa082';
-        sunLight.color.set('#ff9b54');
-        sunLight.intensity = 1.65;
-        sunLight.position.set(150, 68, 95);
-        hemiLight.color.set('#d98b6c');
-        hemiLight.groundColor.set('#453d38');
-        hemiLight.intensity = 0.8;
+        bgHex = '#b8684d';
+        scene.environmentIntensity = 0.48;
+        renderer.toneMappingExposure = 1.12;
+        sunLight.color.set('#ff8c42');
+        sunLight.intensity = 1.55;
+        sunLight.position.set(150, 52, 95);
+        hemiLight.color.set('#d47b5d');
+        hemiLight.groundColor.set('#382e2a');
+        hemiLight.intensity = 0.68;
+        rimLight.color.set('#6e85b0');
+        rimLight.intensity = 0.38;
+        for (const pt of courtyardPointLights) {
+          pt.color.set('#ffae4d');
+          pt.intensity = 2.1;
+        }
       } else {
+        bgHex = palette.fogColor;
+        scene.environmentIntensity = 0.85;
+        renderer.toneMappingExposure = 1.08;
         sunLight.color.set('#fff3db');
         sunLight.intensity = 1.65;
         sunLight.position.set(110, 145, 95);
         hemiLight.color.set(palette.skyTop);
         hemiLight.groundColor.set(palette.groundColor);
         hemiLight.intensity = 0.88;
+        rimLight.color.set('#9bb8d9');
+        rimLight.intensity = 0.45;
+        for (const pt of courtyardPointLights) {
+          pt.intensity = 0;
+        }
       }
 
       scene.background = new THREE.Color(bgHex);
-      scene.fog = new THREE.FogExp2(bgHex, 0.0021);
+      scene.fog = new THREE.FogExp2(bgHex, p.timeOfDay === 'night' ? 0.0014 : 0.0019);
 
-      // 1. Extended Ground Terrain & Natural Green Belt Perimeter (800m x 800m so never a floating box)
+      // 1. Extended Ground Terrain & Natural Green Belt Perimeter (850m x 850m)
+      const terrainColor =
+        p.timeOfDay === 'night'
+          ? new THREE.Color(palette.groundColor).multiplyScalar(0.38)
+          : p.timeOfDay === 'sunset'
+          ? new THREE.Color(palette.groundColor).multiplyScalar(0.72)
+          : new THREE.Color(palette.groundColor);
+
       const terrainMesh = new THREE.Mesh(
         new THREE.PlaneGeometry(850, 850),
         new THREE.MeshStandardMaterial({
-          color: palette.groundColor,
+          color: terrainColor,
           roughness: 0.95,
           metalness: 0.02,
         })
@@ -274,24 +343,28 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
       terrainMesh.receiveShadow = true;
       contentRoot.add(terrainMesh);
 
-      // Microdistrict turf lawn pad (y = 0)
+      // 2. Microdistrict Turf Lawn Pad with Custom Wind & Streetlamp Shader
+      activeGrassShaderMat = createGrassLawnShaderMaterial(p.season, p.timeOfDay, d.streetLamps);
       const turfPad = new THREE.Mesh(
-        new THREE.BoxGeometry(246, 0.04, 246),
-        new THREE.MeshStandardMaterial({
-          color: palette.grassColor,
-          roughness: 0.92,
-          metalness: 0.02,
-        })
+        new THREE.PlaneGeometry(246, 246, 32, 32),
+        activeGrassShaderMat
       );
-      turfPad.position.y = -0.02;
+      turfPad.rotation.x = -Math.PI / 2;
+      turfPad.position.y = 0.0;
       turfPad.receiveShadow = true;
       contentRoot.add(turfPad);
+
+      // 3. Instanced 3D Wind-Animated Grass Tufts across Courtyards
+      if (p.layers.vegetation) {
+        activeWindGrassController = buildInstancedWindGrass(p.season, p.timeOfDay);
+        contentRoot.add(activeWindGrassController.mesh);
+      }
 
       // Perimeter avenues (Проспекты вокруг микрорайона) at y = 0.015
       const roadMat = new THREE.MeshStandardMaterial({
         color: palette.asphaltColor,
-        roughness: 0.88,
-        metalness: 0.05,
+        roughness: 0.85,
+        metalness: 0.08,
       });
       const roadMarkingMat = new THREE.MeshBasicMaterial({ color: '#e2ded3' });
       const avenueCoords = [
@@ -307,20 +380,30 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
         contentRoot.add(road);
 
         const stripe = new THREE.Mesh(
-          new THREE.BoxGeometry(av.w > av.d ? av.w - 16 : 0.25, 0.036, av.d > av.w ? av.d - 16 : 0.25),
+          new THREE.BoxGeometry(
+            av.w > av.d ? av.w - 16 : 0.25,
+            0.036,
+            av.d > av.w ? av.d - 16 : 0.25
+          ),
           roadMarkingMat
         );
         stripe.position.set(av.x, 0.018, av.z);
         contentRoot.add(stripe);
       }
 
-      // 2. Pedestrian Sidewalk & Courtyard Paths Layer
+      // 4. Pedestrian Sidewalk & Courtyard Paths Layer
       if (p.layers.paths) {
         const pathsGroup = buildPedestrianPathsGroup(d.paths, p.season);
         contentRoot.add(pathsGroup);
       }
 
-      // 3. Courtyards & Playgrounds Layer (Детские площадки)
+      // 5. Soviet Streetlamps ("Кобра" РКУ-250) with Evening Light Cones & Ground Pools
+      if (d.streetLamps && d.streetLamps.length > 0) {
+        const lampsGroup = buildStreetLampsGroup(d.streetLamps, p.timeOfDay);
+        contentRoot.add(lampsGroup);
+      }
+
+      // 6. Courtyards & Playgrounds Layer (Детские площадки)
       if (p.layers.playgrounds) {
         for (const pg of d.playgrounds) {
           const pgGroup = buildPlaygroundMeshGroup(pg);
@@ -329,7 +412,7 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
         }
       }
 
-      // 4. Benches & Urns Layer (Скамейки и урны)
+      // 7. Benches & Urns Layer (Скамейки и урны)
       if (p.layers.benchesAndUrns) {
         for (const bItem of d.benchesAndUrns) {
           const bGroup = buildBenchAndUrnGroup(bItem);
@@ -337,13 +420,28 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
         }
       }
 
-      // 5. Green Landscaping Layer (Деревья и кустарники)
+      // 8. Green Landscaping Layer (Деревья и кустарники)
       if (p.layers.vegetation) {
         const vegGroup = buildVegetationGroup(d.vegetation, p.season, maxAnisotropy);
         contentRoot.add(vegGroup);
       }
 
-      // 6. Soviet Residential & Social Infrastructure Buildings Layers
+      // 9. Animated Pedestrians Walking Along Sidewalk Network
+      if (p.layers.pedestrians && d.pedestrians && d.pedestrians.length > 0) {
+        const pedsGroup = new THREE.Group();
+        for (const spec of d.pedestrians) {
+          const handle = buildPedestrianActor(spec);
+          activePedestrianHandles.push(handle);
+          pedsGroup.add(handle.root);
+        }
+        updatePedestriansAtTime(
+          activePedestrianHandles,
+          (performance.now() - startTimeMs) * 0.001
+        );
+        contentRoot.add(pedsGroup);
+      }
+
+      // 10. Soviet Residential & Social Infrastructure Buildings Layers
       for (const bld of d.buildings) {
         const isRes = bld.category === 'residential';
         if ((isRes && p.layers.buildings) || (!isRes && p.layers.socialInfra)) {
@@ -368,8 +466,6 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
       } else {
         highlightRing.visible = false;
       }
-
-      requestRender();
     };
 
     const flyToPreset = (
@@ -381,7 +477,6 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
         targetCamPos.set(135, 92, 155);
         targetLookAt.set(0, 8, 0);
       } else if (preset === 'courtyard') {
-        // Focus directly inside the courtyard on the playground with the Soviet rocket slide & geodesic dome
         const pg =
           sel?.kind === 'playground'
             ? sel.data
@@ -397,13 +492,11 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
         targetLookAt.set(pg.x - 2, 3.0, pg.z - 2);
       }
       transitionActive = true;
-      requestRender();
     };
 
     sceneApiRef.current = {
       rebuildScene,
       flyToPreset,
-      requestRender,
     };
 
     // Initial scene build
@@ -412,7 +505,9 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
     if (!isSoftwareGl) {
       renderer.compile(scene, camera);
     }
-    requestRender();
+
+    // Start continuous animation loop (paced via afterDraw on software WebGL)
+    tick();
 
     // Pointer click raycasting for selecting buildings or playgrounds
     let downX = 0;
@@ -465,7 +560,7 @@ export const DistrictSceneView: React.FC<DistrictSceneViewProps> = ({
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
       renderer.setSize(w, h);
-      requestRender();
+      renderer.render(scene, camera);
     };
     window.addEventListener('resize', onResize);
 

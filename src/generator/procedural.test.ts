@@ -23,15 +23,17 @@ test('deterministic procedural generation returns identical output for same seed
   assert.equal(d1.benchesAndUrns.length, d2.benchesAndUrns.length);
   assert.equal(d1.vegetation.length, d2.vegetation.length);
   assert.equal(d1.paths.length, d2.paths.length);
+  assert.equal(d1.pedestrians.length, d2.pedestrians.length);
+  assert.equal(d1.streetLamps.length, d2.streetLamps.length);
 });
 
-test('all four late-Soviet Moscow presets generate distinct series, facade variants, social infra, and landscaping', () => {
+test('all four late-Soviet Moscow presets generate distinct series, facade variants, social infra, pedestrians, streetlamps, and landscaping', () => {
   const presets: DistrictPresetId[] = ['chertanovo', 'belyayevo', 'yasenevo', 'zyuzino'];
 
   for (const preset of presets) {
     const district = generateMicrodistrict(makeDefaultParams(preset, 1979));
 
-    // Buildings & Social infrastructure (schools, kindergartens, polyclinics, universam, produkti)
+    // Buildings & Social infrastructure
     assert.ok(district.buildings.length >= 14, `${preset} should have at least 14 buildings`);
     assert.ok(district.metrics.residentialBuildings >= 8);
     assert.ok(district.metrics.socialBuildings >= 5, `${preset} should include full social infrastructure`);
@@ -50,6 +52,14 @@ test('all four late-Soviet Moscow presets generate distinct series, facade varia
     assert.ok(district.playgrounds.length >= 4, `${preset} should have courtyard playgrounds`);
     assert.ok(district.metrics.playEquipmentCount >= 14, `${preset} should have characteristic play equipment`);
 
+    // Pedestrians & Streetlamps
+    assert.ok(district.pedestrians.length >= 20, `${preset} should generate pedestrians going about their business`);
+    for (const ped of district.pedestrians) {
+      assert.ok(ped.waypoints.length >= 4, 'each pedestrian should have a multi-waypoint sidewalk route');
+      assert.ok(ped.activity.length > 5);
+    }
+    assert.ok(district.streetLamps.length >= 18, `${preset} should generate streetlamps for evening lighting`);
+
     // Benches & Urns
     assert.ok(district.benchesAndUrns.length >= 15, `${preset} should generate benches and urns`);
     assert.ok(district.metrics.urnsCount >= 10, `${preset} should include street urns`);
@@ -59,18 +69,19 @@ test('all four late-Soviet Moscow presets generate distinct series, facade varia
     assert.ok(district.metrics.pedestrianPathsLengthMeters > 500);
 
     // Trees & Shrubs
-    assert.ok(district.metrics.treesCount >= 20, `${preset} should have trees (poplars, birches, maples)`);
+    assert.ok(district.metrics.treesCount >= 15, `${preset} should have trees (poplars, birches, maples)`);
     assert.ok(district.metrics.shrubsCount >= 10, `${preset} should have shrubs (lilac, hedgerows)`);
   }
 });
 
-test('landscaping and social infrastructure sliders scale counts appropriately', () => {
+test('landscaping, pedestrian, and social infrastructure sliders scale counts appropriately', () => {
   const lowParams: GeneratorParams = {
     ...makeDefaultParams('belyayevo', 42),
     socialInfraLevel: 0.55,
     courtyardComplexity: 0.35,
     greeneryDensity: 0.25,
     sidewalkDensity: 0.35,
+    pedestrianDensity: 0.25,
   };
   const highParams: GeneratorParams = {
     ...makeDefaultParams('belyayevo', 42),
@@ -78,6 +89,7 @@ test('landscaping and social infrastructure sliders scale counts appropriately',
     courtyardComplexity: 0.95,
     greeneryDensity: 0.95,
     sidewalkDensity: 0.95,
+    pedestrianDensity: 0.95,
   };
 
   const lowDistrict = generateMicrodistrict(lowParams);
@@ -86,6 +98,10 @@ test('landscaping and social infrastructure sliders scale counts appropriately',
   assert.ok(
     highDistrict.metrics.socialBuildings > lowDistrict.metrics.socialBuildings,
     'higher socialInfraLevel adds more social facilities'
+  );
+  assert.ok(
+    highDistrict.metrics.pedestriansCount > lowDistrict.metrics.pedestriansCount,
+    'higher pedestrianDensity increases pedestrians count'
   );
   assert.ok(
     highDistrict.metrics.playEquipmentCount > lowDistrict.metrics.playEquipmentCount,

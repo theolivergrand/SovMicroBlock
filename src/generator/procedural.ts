@@ -6,10 +6,12 @@ import {
   GeneratedBuilding,
   GeneratedDistrict,
   GeneratorParams,
+  PedestrianAgentSpec,
   PedestrianPathSegment,
   PlayEquipmentItem,
   PlayEquipmentType,
   PlaygroundZone,
+  StreetLampItem,
   VegetationItem,
 } from './types';
 
@@ -96,8 +98,9 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
   const paths: PedestrianPathSegment[] = [];
   const benchesAndUrns: BenchAndUrnItem[] = [];
   const vegetation: VegetationItem[] = [];
+  const streetLamps: StreetLampItem[] = [];
+  const pedestrians: PedestrianAgentSpec[] = [];
 
-  // Filter active residential series pool
   const activeResSeries: BuildingSeriesId[] =
     params.allowedResidentialSeries && params.allowedResidentialSeries.length > 0
       ? params.allowedResidentialSeries
@@ -110,7 +113,6 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     return activeResSeries[fallbackIndex % activeResSeries.length];
   };
 
-  // Define 4 main courtyard clusters + central civic green core
   const courtyards: CourtyardSlot[] = [
     { index: 1, cx: -58, cz: -54, radius: 34, name: 'Северо-западный жилой двор' },
     { index: 2, cx: 58, cz: -54, radius: 34, name: 'Северо-восточный жилой двор' },
@@ -206,40 +208,30 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     buildingCounter++;
   };
 
-  // ============================================================================
   // 1. Place Late-Soviet Social Infrastructure (по нормам СНиП II-60-75)
-  // ============================================================================
-  // A. Central green pedestrian core (isolated from transit avenues): School & Kindergartens
   addBuilding('School-I-1158', 0, -14, 0, 1, 'h-school');
   addBuilding('Kindergarten-I-1194', 2, 24, 0, 1, 'u-shape');
 
-  // B. Perimeter civic & commercial zone: Universam, Polyclinic, Produkti store, ATS/Dom Byta
   addBuilding('Universam', -86, 100, 0, 1, 'linear');
   addBuilding('Polyclinic-I-1169', 84, 98, Math.PI, 1, 'polyclinic-cross');
   addBuilding('Produkti-Store', -98, -6, Math.PI / 2, 1, 'linear');
 
   if (params.socialInfraLevel >= 0.7) {
-    // Second neighborhood grocery store ("Стекляшка Продукты / Булочная") on the East side
     addBuilding('Produkti-Store', 98, -10, -Math.PI / 2, 1, 'linear');
   }
   if (params.socialInfraLevel >= 0.8) {
-    // District ATS / Post Office / Dom Byta on the North avenue
     addBuilding('ATS-Post-Office', -84, -100, 0, 1, 'linear');
   }
   if (params.socialInfraLevel >= 0.9) {
-    // Second Kindergarten pavilion for high-population microdistricts
     addBuilding('Kindergarten-I-1194', 82, -98, Math.PI, 1, 'u-shape');
   }
 
-  // C. Utility courtyard substations (ТП / ЦТП)
   addBuilding('TP-Substation', -25, 10, Math.PI / 2, 1, 'linear');
   if (params.buildingDensity > 0.55) {
     addBuilding('TP-Substation', 29, -20, 0, 1, 'linear');
   }
 
-  // ============================================================================
   // 2. Place Residential Buildings around the 4 Courtyards
-  // ============================================================================
   courtyards.forEach((cy, idx) => {
     const signX = cy.cx < 0 ? -1 : 1;
     const signZ = cy.cz < 0 ? -1 : 1;
@@ -335,7 +327,6 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
         );
       }
     } else {
-      // Zyuzino: mix of 1-515/9M, II-49, KOPE, P-44, and II-68 towers
       addBuilding(
         pickResSeries(idx % 2 === 0 ? '1-515-9M' : 'II-49', idx),
         cy.cx - signX * 6,
@@ -378,9 +369,7 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     addBuilding(towerSeries, 0, -100, 0, towerSeries === 'II-68' ? 1 : 2);
   }
 
-  // ============================================================================
-  // 3. Generate Courtyards & Playgrounds (Детские и спортивные площадки)
-  // ============================================================================
+  // 3. Generate Courtyards & Playgrounds
   courtyards.forEach((cy, idx) => {
     const isSportYard = idx === 3;
     const width = isSportYard ? 26 : 22;
@@ -522,7 +511,6 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     });
   });
 
-  // Kindergarten play pavilion playground
   playgrounds.push({
     id: 'pg-kindergarten',
     name: 'Прогулочная площадка детского сада И-1194',
@@ -566,9 +554,7 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     urnCount: 2,
   });
 
-  // ============================================================================
-  // 4. Generate Pedestrian Sidewalks & Courtyard Walkways (Тротуары)
-  // ============================================================================
+  // 4. Generate Pedestrian Sidewalks & Courtyard Walkways
   let pathCounter = 1;
   const addPath = (
     x1: number,
@@ -670,9 +656,213 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     }
   });
 
-  // ============================================================================
-  // 5. Generate Green Landscaping (Деревья и кустарники)
-  // ============================================================================
+  // 5. Generate Soviet Streetlamps (Опоры освещения РКУ «Кобра» вдоль аллей и во дворах)
+  let lampCounter = 1;
+  const lampStops = [-92, -62, -28, 0, 28, 62, 92];
+  lampStops.forEach((coord) => {
+    // Along horizontal boulevards (z = -38 and z = 38)
+    streetLamps.push({
+      id: `lamp-${lampCounter++}`,
+      x: coord,
+      z: -35.6,
+      rotation: Math.PI, // arm points to -z (-38)
+      height: 6.4,
+    });
+    streetLamps.push({
+      id: `lamp-${lampCounter++}`,
+      x: coord,
+      z: 35.6,
+      rotation: 0, // arm points to +z (38)
+      height: 6.4,
+    });
+  });
+  // Courtyard playground corner lamps
+  courtyards.forEach((cy) => {
+    streetLamps.push({
+      id: `lamp-cy-${cy.index}-a`,
+      x: cy.cx - 11.5,
+      z: cy.cz - 9.5,
+      rotation: Math.PI * 0.25,
+      height: 5.6,
+    });
+    streetLamps.push({
+      id: `lamp-cy-${cy.index}-b`,
+      x: cy.cx + 11.5,
+      z: cy.cz + 9.5,
+      rotation: -Math.PI * 0.75,
+      height: 5.6,
+    });
+  });
+
+  // 6. Generate Pedestrians Going About Their Daily Business (Пешеходы, идущие по своим делам)
+  const pedDensity = params.pedestrianDensity ?? 0.8;
+  const targetPedCount = Math.max(8, Math.round(38 * pedDensity));
+
+  const coatPalette = [
+    '#2c4359', // тёмно-синее пальто
+    '#5e4332', // коричневое драповое пальто
+    '#7a3b2e', // бордовая куртка
+    '#3b5c4a', // тёмно-зелёный плащ
+    '#8c6d46', // бежево-верблюжье пальто
+    '#4a4d52', // графитовое пальто
+    '#325e7a', // синяя советская «олимпийка»
+  ];
+  const pantsPalette = ['#23272e', '#343840', '#2b3648', '#3d352e'];
+  const hatPalette = ['#2b2623', '#8c3b2b', '#385475', '#b89f7d', '#4a453f'];
+  const bagPalette = ['#c95b2b', '#2e5d82', '#523b2a', '#d49b35'];
+
+  // Define realistic closed-loop pedestrian routes along the sidewalk graph
+  const routeTemplates: {
+    activity: string;
+    role: PedestrianAgentSpec['role'];
+    waypoints: { x: number; z: number }[];
+  }[] = [
+    {
+      activity: 'Идёт в Универсам за продуктами с авоськой',
+      role: 'shopper',
+      waypoints: [
+        { x: -86, z: 88 },
+        { x: -38, z: 88 },
+        { x: -38, z: 38 },
+        { x: -86, z: 38 },
+      ],
+    },
+    {
+      activity: 'Возвращается с работы от метро к подъезду',
+      role: 'worker',
+      waypoints: [
+        { x: -112, z: -38 },
+        { x: -38, z: -38 },
+        { x: 38, z: -38 },
+        { x: 112, z: -38 },
+      ],
+    },
+    {
+      activity: 'Идёт по южному бульвару мимо поликлиники и универсама',
+      role: 'worker',
+      waypoints: [
+        { x: -112, z: 38 },
+        { x: -38, z: 38 },
+        { x: 38, z: 38 },
+        { x: 112, z: 38 },
+      ],
+    },
+    {
+      activity: 'Спешит в булочную «Продукты» и обратно во двор',
+      role: 'shopper',
+      waypoints: [
+        { x: -90, z: -6 },
+        { x: -38, z: -6 },
+        { x: -38, z: -54 },
+        { x: -58, z: -54 },
+        { x: -38, z: -54 },
+        { x: -38, z: -6 },
+      ],
+    },
+    {
+      activity: 'Ведёт ребёнка из детского сада И-1194 через зелёный двор',
+      role: 'parent',
+      waypoints: [
+        { x: 2, z: 38 },
+        { x: 38, z: 38 },
+        { x: 38, z: 54 },
+        { x: 58, z: 54 },
+        { x: 38, z: 54 },
+        { x: 38, z: 38 },
+      ],
+    },
+    {
+      activity: 'Идёт из школы И-1158 к северо-восточному двору',
+      role: 'student',
+      waypoints: [
+        { x: 0, z: -38 },
+        { x: 38, z: -38 },
+        { x: 58, z: -38 },
+        { x: 58, z: -54 },
+        { x: 38, z: -54 },
+        { x: 38, z: -38 },
+      ],
+    },
+    {
+      activity: 'Направляется в районную поликлинику И-1169',
+      role: 'pensioner',
+      waypoints: [
+        { x: 38, z: -38 },
+        { x: 38, z: 38 },
+        { x: 38, z: 88 },
+        { x: 84, z: 88 },
+        { x: 38, z: 88 },
+        { x: 38, z: 38 },
+      ],
+    },
+    {
+      activity: 'Прогуливается вокруг детской площадки «Космос» (двор №1)',
+      role: 'parent',
+      waypoints: [
+        { x: -70, z: -64 },
+        { x: -46, z: -64 },
+        { x: -46, z: -44 },
+        { x: -70, z: -44 },
+      ],
+    },
+    {
+      activity: 'Прогуливается вокруг детской площадки двора №3',
+      role: 'pensioner',
+      waypoints: [
+        { x: -70, z: 44 },
+        { x: -46, z: 44 },
+        { x: -46, z: 64 },
+        { x: -70, z: 64 },
+      ],
+    },
+    {
+      activity: 'Идёт вдоль спортивной коробки двора №4 к Дому быта',
+      role: 'worker',
+      waypoints: [
+        { x: -38, z: 105 },
+        { x: -38, z: 38 },
+        { x: -38, z: -38 },
+        { x: -38, z: -96 },
+      ],
+    },
+  ];
+
+  const firstNames = [
+    'Товарищ Соколов',
+    'Нина Павловна',
+    'Инженер Морозов',
+    'Сергей Петрович',
+    'Галина Ивановна',
+    'Студентка Лена',
+    'Товарищ Кузнецов',
+    'Татьяна Борисовна',
+    'Школьник Дима',
+    'Виктор Андреевич',
+  ];
+
+  for (let i = 0; i < targetPedCount; i++) {
+    const tpl = routeTemplates[i % routeTemplates.length];
+    const reverse = i % 2 === 1;
+    const waypoints = reverse ? [...tpl.waypoints].reverse() : tpl.waypoints;
+
+    pedestrians.push({
+      id: `ped-${i + 1}`,
+      name: firstNames[i % firstNames.length],
+      activity: tpl.activity,
+      role: tpl.role,
+      coatColor: coatPalette[(i + Math.floor(rng() * 3)) % coatPalette.length],
+      pantsColor: pantsPalette[i % pantsPalette.length],
+      hatColor: hatPalette[(i + 2) % hatPalette.length],
+      hasBag: i % 3 !== 0,
+      bagColor: bagPalette[i % bagPalette.length],
+      speed: tpl.role === 'pensioner' ? 1.15 : tpl.role === 'student' ? 1.75 : 1.4 + (i % 3) * 0.12,
+      initialPhase: (i / targetPedCount + rng() * 0.15) % 1,
+      lateralOffset: (reverse ? 0.55 : -0.55) + (rng() - 0.5) * 0.25,
+      waypoints,
+    });
+  }
+
+  // 7. Generate Green Landscaping (Деревья и кустарники)
   const isTooCloseToBuildingOrPlayground = (x: number, z: number, minBldClearance = 4.5): boolean => {
     for (const b of buildings) {
       const dx = x - b.x;
@@ -780,7 +970,6 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     const ringCount = Math.round(10 * params.greeneryDensity);
     for (let i = 0; i < ringCount; i++) {
       const angle = (i / ringCount) * Math.PI * 2 + cIdx * 0.5;
-      // Leave SE camera sightline open (around 0.45..1.15 rad) so courtyard close-up is unobstructed
       const normAngle = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
       const isSightline = normAngle > 0.35 && normAngle < 1.25;
       const dist = 16.5 + (i % 2) * 3.2;
@@ -815,9 +1004,7 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     });
   });
 
-  // ============================================================================
-  // 6. Calculate Comprehensive District Passport Metrics
-  // ============================================================================
+  // 8. Calculate Comprehensive District Passport Metrics
   const resBlds = buildings.filter((b) => b.category === 'residential');
   const socBlds = buildings.filter((b) => b.category === 'social');
   const utilBlds = buildings.filter((b) => b.category === 'utility');
@@ -894,6 +1081,8 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     urnsCount,
     treesCount,
     shrubsCount,
+    pedestriansCount: pedestrians.length,
+    streetLampsCount: streetLamps.length,
     pedestrianPathsLengthMeters,
     greenSpacePercentage,
     snipComplianceScore,
@@ -908,6 +1097,8 @@ export function generateMicrodistrict(params: GeneratorParams): GeneratedDistric
     paths,
     benchesAndUrns,
     vegetation,
+    pedestrians,
+    streetLamps,
     metrics,
   };
 }
